@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: "go-api"
+    static_configs:
+      - targets: ["api:8080"]
+
+# Uncomment for retention configuration
+# command:
+  # - "--storage.tsdb.retention.time=24h"
