@@ -28,8 +28,8 @@ services:
     ports:
       - "6379:6379"
 
-  # worker:
-  #   build:
-  #     context: ./worker
-  #   depends_on:
-  #     - redis
+  worker:
+    build:
+      context: ./worker
+    depends_on:
+      - redis
