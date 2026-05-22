@@ -20,3 +20,14 @@ services:
       - "3000:3000"
     depends_on:
       - prometheus
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  worker:
+    build:
+      context: ./worker
+    depends_on:
+      - redis
