@@ -160,7 +160,7 @@ func main() {
 
 	mux.HandleFunc("/healthz", healthHandler)
 	mux.HandleFunc("/work", workHandler)
-	mux.HandleFunc("/job", jobsHandler)
+	mux.HandleFunc("/jobs", jobsHandler)
 	mux.Handle("/metrics", promhttp.Handler())
 
 	server := &http.Server{
