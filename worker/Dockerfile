@@ -1,20 +1,20 @@
-FROM golang:1.24-alpine AS builder
+FROM --platform=linux/arm64 golang:1.24-alpine AS builder
 
-WORKDIR /app
+WORKDIR /src
 
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
 
-RUN go build -o worker .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o app-binary .
 
-FROM alpine:latest
+FROM --platform=linux/arm64 alpine:latest
 
 WORKDIR /app
 
-COPY --from=builder /app/worker .
+COPY --from=builder /src/app-binary .
 
-RUN chmod +x ./worker
+RUN chmod +x /app/app-binary
 
-CMD ["./worker"]
+CMD ["/app/app-binary"]

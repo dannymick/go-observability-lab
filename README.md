@@ -190,6 +190,19 @@ histogram_quantile(
 )
 ```
 
+List all scraped metrics in Prometheus UI:
+Open `http://localhost:9090`
+
+Type in query box: `{__name__=~".+"}`
+
+Or click
+`Status -> TSDB Status`
+
+`Status -> Targets`
+
+For metric names only:
+`Graph page -> Metrics dropdown`
+
 ---
 
 # Observability Concepts Demonstrated

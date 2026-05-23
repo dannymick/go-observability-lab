@@ -20,6 +20,8 @@ services:
     image: grafana/grafana:latest
     ports:
       - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
     depends_on:
       - prometheus
 
@@ -29,7 +31,13 @@ services:
       - "6379:6379"
 
   worker:
+    platform: linux/arm64
     build:
       context: ./worker
+    ports:
+      - "8081:8081"
     depends_on:
       - redis
+
+volumes:
+  grafana-data:
