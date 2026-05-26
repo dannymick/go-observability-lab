@@ -8,12 +8,15 @@ import (
 	"math/rand"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
+
+	sharedjobs "go-observability-lab/shared/jobs"
 )
 
 var redisClient = redis.NewClient(&redis.Options{
@@ -50,11 +53,6 @@ var (
 type statusRecorder struct {
 	http.ResponseWriter
 	statusCode int
-}
-
-type Job struct {
-	ID   string `json:"id"`
-	Type string `json:"type"`
 }
 
 func (r *statusRecorder) WriteHeader(statusCode int) {
@@ -124,21 +122,33 @@ func workHandler(w http.ResponseWriter, r *http.Request) {
 func jobsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
 
-	job := Job{
+	job := sharedjobs.Job{
 		ID:   uuid.New().String(),
 		Type: "process_work",
 	}
 
-	payload, err := json.Marshal(job)
-	if err != nil {
-		http.Error(w, "failed to marshal job", http.StatusInternalServerError)
-		return
+	status := sharedjobs.JobStatus{
+		ID:        job.ID,
+		Type:      job.Type,
+		Status:    "queued",
+		Attempts:  job.Attempts,
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 
-	err = redisClient.RPush(ctx, "jobs", payload).Err()
+	statusPayload, err := json.Marshal(status)
+
 	if err != nil {
-		http.Error(w, "failed to enqueue job", http.StatusInternalServerError)
+
+		http.Error(w, "failed to marshal job status", http.StatusInternalServerError)
 		return
+
+	}
+
+	if err := redisClient.Set(ctx, sharedjobs.StatusKey(job.ID), statusPayload, 24*time.Hour).Err(); err != nil {
+
+		http.Error(w, "failed to set job status", http.StatusInternalServerError)
+		return
+
 	}
 
 	w.WriteHeader(http.StatusAccepted)
@@ -147,6 +157,36 @@ func jobsHandler(w http.ResponseWriter, r *http.Request) {
 		"job_id": job.ID,
 		"status": "queued",
 	})
+}
+
+func getJobHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := context.Background()
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	id := strings.TrimPrefix(r.URL.Path, "/jobs/")
+	if id == "" {
+		http.Error(w, "missing job id", http.StatusBadRequest)
+		return
+	}
+
+	payload, err := redisClient.Get(ctx, sharedjobs.StatusKey(id)).Result()
+	if err == redis.Nil {
+		http.Error(w, "job not found", http.StatusNotFound)
+		return
+	}
+
+	if err != nil {
+		http.Error(w, "failed to get job status", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(payload))
 }
 
 func main() {
@@ -160,7 +200,8 @@ func main() {
 
 	mux.HandleFunc("/healthz", healthHandler)
 	mux.HandleFunc("/work", workHandler)
-	mux.HandleFunc("/jobs", jobsHandler)
+	mux.HandleFunc("/jobs", jobsHandler)    // POST
+	mux.HandleFunc("/jobs/", getJobHandler) // GET
 	mux.Handle("/metrics", promhttp.Handler())
 
 	server := &http.Server{

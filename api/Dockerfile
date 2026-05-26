@@ -1,19 +1,27 @@
 FROM golang:1.24-alpine AS builder
 
-WORKDIR /app
+WORKDIR /src
 
-COPY go.mod go.sum ./
+COPY go.work ./
+
+COPY api/go.mod api/go.sum ./api/
+COPY worker/go.mod worker/go.sum ./worker/
+COPY shared/jobs/go.mod ./shared/jobs/
+
+COPY shared/jobs ./shared/jobs
+COPY api ./api
+
+WORKDIR /src/api
+
 RUN go mod download
 
-COPY . .
-
-RUN go build -o server .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o server .
 
 FROM alpine:latest
 
 WORKDIR /app
 
-COPY --from=builder /app/server .
+COPY --from=builder /src/api/server .
 
 EXPOSE 8080
 

@@ -11,13 +11,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
-)
 
-type Job struct {
-	ID       string `json:"id"`
-	Type     string `json:"type"`
-	Attempts int    `json:"attempts"`
-}
+	sharedjobs "go-observability-lab/shared/jobs"
+)
 
 var (
 	jobsProcessedTotal = prometheus.NewCounterVec(
@@ -62,7 +58,7 @@ func main() {
 
 		rawJob := result[1]
 
-		var job Job
+		var job sharedjobs.Job
 		if err := json.Unmarshal([]byte(rawJob), &job); err != nil {
 			log.Printf("failed to unmarshal job: %v", err)
 			continue
@@ -83,8 +79,10 @@ func startMetricsServer() {
 	}
 }
 
-func processJob(ctx context.Context, redisClient *redis.Client, job Job) {
+func processJob(ctx context.Context, redisClient *redis.Client, job sharedjobs.Job) {
 	start := time.Now()
+
+	updateJobStatus(ctx, redisClient, job, "processing")
 
 	log.Printf(
 		"processing job id=%s type=%s attempts=%d",
@@ -101,6 +99,7 @@ func processJob(ctx context.Context, redisClient *redis.Client, job Job) {
 
 		if job.Attempts >= maxAttempts {
 			status := "dead_lettered"
+			updateJobStatus(ctx, redisClient, job, status)
 
 			jobsProcessedTotal.WithLabelValues(job.Type, status).Inc()
 			jobDuration.WithLabelValues(job.Type, status).Observe(time.Since(start).Seconds())
@@ -128,6 +127,7 @@ func processJob(ctx context.Context, redisClient *redis.Client, job Job) {
 		}
 
 		status := "retried"
+		updateJobStatus(ctx, redisClient, job, status)
 
 		jobsProcessedTotal.WithLabelValues(job.Type, status).Inc()
 		jobDuration.WithLabelValues(job.Type, status).Observe(time.Since(start).Seconds())
@@ -155,6 +155,7 @@ func processJob(ctx context.Context, redisClient *redis.Client, job Job) {
 	}
 
 	status := "success"
+	updateJobStatus(ctx, redisClient, job, status)
 
 	jobsProcessedTotal.WithLabelValues(job.Type, status).Inc()
 	jobDuration.WithLabelValues(job.Type, status).Observe(time.Since(start).Seconds())
@@ -166,4 +167,24 @@ func processJob(ctx context.Context, redisClient *redis.Client, job Job) {
 		job.Attempts,
 		delay,
 	)
+}
+
+func updateJobStatus(ctx context.Context, redisClient *redis.Client, job sharedjobs.Job, status string) {
+	jobStatus := sharedjobs.JobStatus{
+		ID:        job.ID,
+		Type:      job.Type,
+		Status:    status,
+		Attempts:  job.Attempts,
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+
+	payload, err := json.Marshal(jobStatus)
+	if err != nil {
+		log.Printf("failed to marshal job status id=%s err=%v", job.ID, err)
+		return
+	}
+
+	if err := redisClient.Set(ctx, sharedjobs.StatusKey(job.ID), payload, 24*time.Hour).Err(); err != nil {
+		log.Printf("failed to update job status id=%s status=%s err=%v", job.ID, status, err)
+	}
 }

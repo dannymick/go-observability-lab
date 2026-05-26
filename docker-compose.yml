@@ -1,7 +1,8 @@
 services:
   api:
     build:
-      context: ./api
+      context: .
+      dockerfile: api/Dockerfile
     ports:
       - "8080:8080"
     depends_on:
@@ -33,9 +34,8 @@ services:
   worker:
     platform: linux/arm64
     build:
-      context: ./worker
-    ports:
-      - "8081:8081"
+      context: .
+      dockerfile: worker/Dockerfile
     depends_on:
       - redis
 
